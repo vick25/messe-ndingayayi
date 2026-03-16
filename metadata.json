@@ -1,0 +1,5 @@
+{
+  "name": "Liturgia - Gestion des Messes",
+  "description": "Application mobile de gestion des messes, chants et textes liturgiques avec support hors-ligne.",
+  "requestFramePermissions": []
+}
