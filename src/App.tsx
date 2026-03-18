@@ -87,27 +87,28 @@ export default function App() {
 
       // Fetch today's mass
       try {
-        const mass = (await db.get(`mass:${today}`)) as Mass;
+        const mass = (await db.get(`mass:${today}`)) as unknown as Mass;
         setCurrentMass(mass);
       } catch (e) {
         const result = await db.find({
           selector: { type: "mass" },
           limit: 1,
         });
-        if (result.docs.length > 0) setCurrentMass(result.docs[0] as Mass);
+        if (result.docs.length > 0)
+          setCurrentMass(result.docs[0] as unknown as Mass);
       }
 
       // Fetch all songs
       const songsResult = await db.find({ selector: { type: "song" } });
-      setAllSongs(songsResult.docs as Song[]);
+      setAllSongs(songsResult.docs as unknown as Song[]);
 
       // Fetch all readings
       const readingsResult = await db.find({ selector: { type: "reading" } });
-      setAllReadings(readingsResult.docs as Reading[]);
+      setAllReadings(readingsResult.docs as unknown as Reading[]);
 
       // Fetch all texts
       const textsResult = await db.find({ selector: { type: "text" } });
-      setAllTexts(textsResult.docs as LiturgicalText[]);
+      setAllTexts(textsResult.docs as unknown as LiturgicalText[]);
 
       setLoading(false);
     } catch (err) {
@@ -732,6 +733,30 @@ function AdminPanel({
               )}
             />
           </button>
+        </div>
+
+        <div className="bg-white p-4 rounded-3xl border border-gray-100 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-gray-50 flex items-center justify-center text-gray-400">
+              <BookOpen size={20} />
+            </div>
+            <div>
+              <h4 className="text-sm font-bold text-gray-800">
+                Synchronisation CouchDB
+              </h4>
+              <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">
+                {import.meta.env.VITE_COUCHDB_URL
+                  ? "Connecté au serveur distant"
+                  : "Mode local uniquement"}
+              </p>
+            </div>
+          </div>
+          <div
+            className={cn(
+              "w-3 h-3 rounded-full",
+              import.meta.env.VITE_COUCHDB_URL ? "bg-emerald-500" : "bg-gray-300",
+            )}
+          />
         </div>
       </div>
 
