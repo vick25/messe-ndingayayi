@@ -178,7 +178,19 @@ const seedData = async () => {
     season: "ORDINARY",
     sections: [
       { id: "entree", name: "Entrée", items: [{ type: "song", id: "song:1117" }] },
+      { id: "kyrie", name: "Kyrie", items: [] },
       { id: "gloria", name: "Gloria", items: [{ type: "song", id: "song:H10" }] },
+      { id: "parole_1", name: "1ère Lecture", items: [] },
+      { id: "psaume", name: "Psaume", items: [] },
+      { id: "parole_2", name: "2ème Lecture", items: [] },
+      { id: "evangile", name: "Évangile", items: [{ type: "reading", id: "reading:gospel_today" }] },
+      { id: "credo", name: "Credo", items: [] },
+      { id: "universelle", name: "Prière Universelle", items: [] },
+      { id: "offertoire", name: "Offertoire", items: [] },
+      { id: "sanctus", name: "Sanctus", items: [] },
+      { id: "anamnese", name: "Anamnèse", items: [] },
+      { id: "communion", name: "Communion", items: [] },
+      { id: "envoi", name: "Envoi", items: [] },
     ],
   };
 

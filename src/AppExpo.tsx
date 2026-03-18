@@ -27,9 +27,12 @@ import {
   Play,
   X,
   Check,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Calendar,
+  Edit2,
+  Book
 } from 'lucide-react-native';
-import { initDB, findDocsByType, getMassByDate, saveDoc } from './dbExpo';
+import { initDB, findDocsByType, getMassByDate, saveDoc, getDoc } from './dbExpo';
 import { Mass, Song, Reading } from './types';
 
 const { width, height } = Dimensions.get('window');
@@ -39,11 +42,22 @@ export default function AppExpo() {
   const [loading, setLoading] = useState(true);
   const [mass, setMass] = useState<Mass | null>(null);
   const [songs, setSongs] = useState<Song[]>([]);
+  const [readings, setReadings] = useState<Reading[]>([]);
   const [selectedSong, setSelectedSong] = useState<Song | null>(null);
+  const [selectedReading, setSelectedReading] = useState<Reading | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showSheetModal, setShowSheetModal] = useState(false);
+  const [isEditingMass, setIsEditingMass] = useState(false);
+  const [availableCategories, setAvailableCategories] = useState(['Entrée', 'Kyrie', 'Gloria', 'Psaume', 'Alléluia', 'Offertoire', 'Sanctus', 'Anamnèse', 'Communion', 'Action de grâce', 'Envoi']);
+  const [customCategory, setCustomCategory] = useState('');
+  const [selectionModal, setSelectionModal] = useState<{
+    visible: boolean;
+    sectionId: string;
+    type: 'song' | 'reading' | 'text';
+  }>({ visible: false, sectionId: '', type: 'song' });
 
   // Formulaire nouveau chant
   const [newSong, setNewSong] = useState<Partial<Song>>({
@@ -60,8 +74,10 @@ export default function AppExpo() {
     const today = new Date().toISOString().split('T')[0];
     const todayMass = await getMassByDate(today);
     const allSongs = await findDocsByType<Song>('song');
+    const allReadings = await findDocsByType<Reading>('reading');
     setMass(todayMass);
     setSongs(allSongs);
+    setReadings(allReadings);
   };
 
   useEffect(() => {
@@ -96,6 +112,50 @@ export default function AppExpo() {
     }
   };
 
+  const handleSelectItem = async (itemId: string) => {
+    if (!mass) return;
+
+    let sectionFound = false;
+    let newSections = mass.sections.map(section => {
+      if (section.id === selectionModal.sectionId) {
+        sectionFound = true;
+        return {
+          ...section,
+          items: [{ type: selectionModal.type, id: itemId }]
+        };
+      }
+      return section;
+    });
+
+    if (!sectionFound) {
+      // Si la section n'existait pas dans l'objet, on l'ajoute
+      const sectionName = selectionModal.sectionId.charAt(0).toUpperCase() + selectionModal.sectionId.slice(1).replace('_', ' ');
+      newSections.push({
+        id: selectionModal.sectionId,
+        name: sectionName,
+        items: [{ type: selectionModal.type, id: itemId }]
+      });
+    }
+
+    const updatedMass = { ...mass, sections: newSections };
+    await saveDoc(updatedMass);
+    setMass(updatedMass);
+    setSelectionModal({ ...selectionModal, visible: false });
+  };
+
+  const handleRemoveItem = async (sectionId: string) => {
+    if (!mass) return;
+    const newSections = mass.sections.map(section => {
+      if (section.id === sectionId) {
+        return { ...section, items: [] };
+      }
+      return section;
+    });
+    const updatedMass = { ...mass, sections: newSections };
+    await saveDoc(updatedMass);
+    setMass(updatedMass);
+  };
+
   if (loading) {
     return (
       <View style={styles.centered}>
@@ -108,47 +168,132 @@ export default function AppExpo() {
   const renderContent = () => {
     switch (activeTab) {
       case 'home':
+        const liturgicalParts = [
+          { name: 'Rites Initiaux', sections: ['entree', 'kyrie', 'gloria'] },
+          { name: 'Liturgie de la Parole', sections: ['parole_1', 'psaume', 'parole_2', 'evangile', 'credo', 'universelle'] },
+          { name: 'Liturgie Eucharistique', sections: ['offertoire', 'sanctus', 'anamnese', 'communion'] },
+          { name: 'Rites de Conclusion', sections: ['envoi'] }
+        ];
+
         return (
           <ScrollView style={styles.content}>
             <View style={styles.hero}>
-              <Text style={styles.heroTitle}>{mass?.title || 'Messe du jour'}</Text>
-              <Text style={styles.heroSubtitle}>{new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}</Text>
+              <View style={styles.rowBetween}>
+                <View>
+                  <Text style={styles.heroTitle}>{mass?.title || 'Messe du jour'}</Text>
+                  <Text style={styles.heroSubtitle}>{new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}</Text>
+                </View>
+                {isAdmin && (
+                  <TouchableOpacity 
+                    style={[styles.editBtn, isEditingMass && styles.editBtnActive]}
+                    onPress={() => setIsEditingMass(!isEditingMass)}
+                  >
+                    <Edit2 size={20} color={isEditingMass ? "#fff" : "#6366f1"} />
+                  </TouchableOpacity>
+                )}
+              </View>
             </View>
 
-            {mass?.sections.map((section) => (
-              <View key={section.id} style={styles.section}>
-                <Text style={styles.sectionTitle}>{section.name.toUpperCase()}</Text>
-                {section.items.map((item, idx) => {
-                  const song = songs.find(s => s._id === item.id);
+            {liturgicalParts.map((part) => (
+              <View key={part.name} style={styles.liturgicalPart}>
+                <Text style={styles.partTitle}>{part.name}</Text>
+                
+                {part.sections.map((sectionId) => {
+                  const section = mass?.sections.find(s => s.id === sectionId);
+                  if (!section && !isEditingMass) return null;
+                  
+                  // Si la section n'existe pas dans l'objet mass (vieux schéma), on l'affiche quand même si on est en mode édition
+                  const displaySection = section || { id: sectionId, name: sectionId.replace('_', ' '), items: [] };
+
                   return (
-                    <TouchableOpacity 
-                      key={idx} 
-                      style={styles.card}
-                      onPress={() => song && setSelectedSong(song)}
-                    >
-                      <View style={styles.cardLeft}>
-                        <View style={styles.iconContainer}>
-                          <Music size={20} color="#6366f1" />
-                        </View>
-                        <View>
-                          <Text style={styles.cardTitle}>{song?.title || item.id}</Text>
-                          <Text style={styles.cardSubtitle}>{song?.reference} • {song?.book}</Text>
-                        </View>
+                    <View key={sectionId} style={styles.section}>
+                      <View style={styles.rowBetween}>
+                        <Text style={styles.sectionTitle}>{displaySection.name.toUpperCase()}</Text>
+                        {isEditingMass && (
+                          <TouchableOpacity 
+                            onPress={() => setSelectionModal({ 
+                              visible: true, 
+                              sectionId: sectionId, 
+                              type: sectionId.includes('parole') || sectionId.includes('lecture') || sectionId.includes('psaume') || sectionId.includes('evangile') ? 'reading' : 'song' 
+                            })}
+                          >
+                            <Plus size={16} color="#6366f1" />
+                          </TouchableOpacity>
+                        )}
                       </View>
-                      <ChevronRight size={20} color="#d1d5db" />
-                    </TouchableOpacity>
+
+                      {displaySection.items.length > 0 ? (
+                        displaySection.items.map((item, idx) => {
+                          const song = songs.find(s => s._id === item.id);
+                          const reading = readings.find(r => r._id === item.id);
+                          
+                          return (
+                            <View key={idx} style={styles.cardContainer}>
+                              <TouchableOpacity 
+                                style={styles.card}
+                                onPress={() => {
+                                  if (item.type === 'song' && song) setSelectedSong(song);
+                                  if (item.type === 'reading' && reading) setSelectedReading(reading);
+                                }}
+                              >
+                                <View style={styles.cardLeft}>
+                                  <View style={styles.iconContainer}>
+                                    {item.type === 'song' ? <Music size={20} color="#6366f1" /> : <Book size={20} color="#10b981" />}
+                                  </View>
+                                  <View style={styles.flex1}>
+                                    <Text style={styles.cardTitle} numberOfLines={1}>
+                                      {item.type === 'song' ? (song?.title || 'Chant inconnu') : (reading?.reference || 'Lecture inconnue')}
+                                    </Text>
+                                    <Text style={styles.cardSubtitle}>
+                                      {item.type === 'song' ? `${song?.reference || ''} • ${song?.book || ''}` : (reading?.readingType || 'LECTURE')}
+                                    </Text>
+                                  </View>
+                                </View>
+                                <ChevronRight size={20} color="#d1d5db" />
+                              </TouchableOpacity>
+                              {isEditingMass && (
+                                <TouchableOpacity 
+                                  style={styles.removeBtn}
+                                  onPress={() => handleRemoveItem(sectionId)}
+                                >
+                                  <X size={16} color="#ef4444" />
+                                </TouchableOpacity>
+                              )}
+                            </View>
+                          );
+                        })
+                      ) : (
+                        isEditingMass && (
+                          <TouchableOpacity 
+                            style={styles.emptyCard}
+                            onPress={() => setSelectionModal({ 
+                              visible: true, 
+                              sectionId: sectionId, 
+                              type: sectionId.includes('parole') || sectionId.includes('lecture') || sectionId.includes('psaume') || sectionId.includes('evangile') ? 'reading' : 'song' 
+                            })}
+                          >
+                            <Text style={styles.emptyCardText}>Ajouter un élément...</Text>
+                          </TouchableOpacity>
+                        )
+                      )}
+                    </View>
                   );
                 })}
               </View>
             ))}
+            <View style={{ height: 40 }} />
           </ScrollView>
         );
 
       case 'repertoire':
-        const filteredSongs = songs.filter(s => 
-          s.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
-          s.reference.includes(searchQuery)
-        );
+        const categories = ['Entrée', 'Kyrie', 'Gloria', 'Psaume', 'Alléluia', 'Offertoire', 'Sanctus', 'Anamnèse', 'Communion', 'Action de grâce', 'Envoi'];
+        
+        const filteredSongs = songs.filter(s => {
+          const matchesSearch = s.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                               s.reference.includes(searchQuery);
+          const matchesCategory = !selectedCategory || (s.categories && s.categories.includes(selectedCategory));
+          return matchesSearch && matchesCategory;
+        });
 
         return (
           <View style={styles.flex1}>
@@ -162,6 +307,29 @@ export default function AppExpo() {
                   onChangeText={setSearchQuery}
                 />
               </View>
+              
+              <ScrollView 
+                horizontal 
+                showsHorizontalScrollIndicator={false} 
+                style={styles.categoryScroll}
+                contentContainerStyle={styles.categoryContent}
+              >
+                <TouchableOpacity 
+                  style={[styles.categoryBtn, !selectedCategory && styles.categoryBtnActive]}
+                  onPress={() => setSelectedCategory(null)}
+                >
+                  <Text style={[styles.categoryBtnText, !selectedCategory && styles.categoryBtnTextActive]}>Tous</Text>
+                </TouchableOpacity>
+                {categories.map(cat => (
+                  <TouchableOpacity 
+                    key={cat}
+                    style={[styles.categoryBtn, selectedCategory === cat && styles.categoryBtnActive]}
+                    onPress={() => setSelectedCategory(cat)}
+                  >
+                    <Text style={[styles.categoryBtnText, selectedCategory === cat && styles.categoryBtnTextActive]}>{cat}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
             </View>
             <ScrollView style={styles.content}>
               {filteredSongs.map((song) => (
@@ -174,7 +342,7 @@ export default function AppExpo() {
                     <View style={styles.iconContainer}>
                       <Music size={20} color="#6366f1" />
                     </View>
-                    <View>
+                    <View style={styles.flex1}>
                       <Text style={styles.cardTitle}>{song.title}</Text>
                       <Text style={styles.cardSubtitle}>{song.reference} • {song.book}</Text>
                     </View>
@@ -182,6 +350,11 @@ export default function AppExpo() {
                   <ChevronRight size={20} color="#d1d5db" />
                 </TouchableOpacity>
               ))}
+              {filteredSongs.length === 0 && (
+                <View style={styles.centered}>
+                  <Text style={styles.emptyText}>Aucun chant trouvé</Text>
+                </View>
+              )}
               <View style={{ height: 40 }} />
             </ScrollView>
           </View>
@@ -306,6 +479,124 @@ export default function AppExpo() {
                 onChangeText={(t) => setNewSong({...newSong, sheetMusicUrls: t ? [t] : []})}
               />
             </View>
+
+            <Text style={styles.inputLabel}>Moment Liturgique</Text>
+            <View style={styles.chipContainer}>
+              {availableCategories.map(cat => (
+                <TouchableOpacity 
+                  key={cat}
+                  style={[styles.chip, newSong.categories?.includes(cat) && styles.chipActive]}
+                  onPress={() => {
+                    const current = newSong.categories || [];
+                    if (current.includes(cat)) {
+                      setNewSong({...newSong, categories: current.filter(c => c !== cat)});
+                    } else {
+                      setNewSong({...newSong, categories: [...current, cat]});
+                    }
+                  }}
+                >
+                  <Text style={[styles.chipText, newSong.categories?.includes(cat) && styles.chipTextActive]}>{cat}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <View style={[styles.row, { marginTop: 10 }]}>
+              <TextInput 
+                style={[styles.input, styles.flex1]}
+                placeholder="Ajouter un autre moment..."
+                value={customCategory}
+                onChangeText={setCustomCategory}
+              />
+              <TouchableOpacity 
+                style={styles.addChipBtn}
+                onPress={() => {
+                  if (customCategory.trim()) {
+                    const cat = customCategory.trim();
+                    if (!availableCategories.includes(cat)) {
+                      setAvailableCategories([...availableCategories, cat]);
+                    }
+                    const current = newSong.categories || [];
+                    if (!current.includes(cat)) {
+                      setNewSong({...newSong, categories: [...current, cat]});
+                    }
+                    setCustomCategory('');
+                  }
+                }}
+              >
+                <Plus size={20} color="#fff" />
+              </TouchableOpacity>
+            </View>
+            <View style={{ height: 40 }} />
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
+
+      {/* Selection Modal */}
+      <Modal visible={selectionModal.visible} animationType="slide">
+        <SafeAreaView style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => setSelectionModal({ ...selectionModal, visible: false })}>
+              <X size={24} color="#1f2937" />
+            </TouchableOpacity>
+            <Text style={styles.modalHeaderTitle}>Sélectionner {selectionModal.type === 'song' ? 'un chant' : 'une lecture'}</Text>
+            <View style={{ width: 24 }} />
+          </View>
+          <View style={styles.searchContainer}>
+            <View style={styles.searchBar}>
+              <Search size={20} color="#9ca3af" />
+              <TextInput 
+                style={styles.searchInput}
+                placeholder="Rechercher..."
+                onChangeText={setSearchQuery}
+              />
+            </View>
+          </View>
+          <ScrollView style={styles.modalContent}>
+            {selectionModal.type === 'song' ? (
+              songs.filter(s => s.title.toLowerCase().includes(searchQuery.toLowerCase())).map(song => (
+                <TouchableOpacity 
+                  key={song._id} 
+                  style={styles.card}
+                  onPress={() => handleSelectItem(song._id)}
+                >
+                  <Text style={styles.cardTitle}>{song.title}</Text>
+                  <Text style={styles.cardSubtitle}>{song.reference}</Text>
+                </TouchableOpacity>
+              ))
+            ) : (
+              readings.map(reading => (
+                <TouchableOpacity 
+                  key={reading._id} 
+                  style={styles.card}
+                  onPress={() => handleSelectItem(reading._id)}
+                >
+                  <Text style={styles.cardTitle}>{reading.reference}</Text>
+                  <Text style={styles.cardSubtitle}>{reading.readingType}</Text>
+                </TouchableOpacity>
+              ))
+            )}
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
+
+      {/* Reading Detail Modal */}
+      <Modal
+        visible={!!selectedReading}
+        animationType="slide"
+        onRequestClose={() => setSelectedReading(null)}
+      >
+        <SafeAreaView style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => setSelectedReading(null)}>
+              <ArrowLeft size={24} color="#1f2937" />
+            </TouchableOpacity>
+            <Text style={styles.modalHeaderTitle}>{selectedReading?.readingType}</Text>
+            <View style={{ width: 24 }} />
+          </View>
+          <ScrollView style={styles.modalContent}>
+            <Text style={styles.songRef}>{selectedReading?.reference}</Text>
+            <View style={styles.lyricsContainer}>
+              <Text style={styles.lyricsText}>{selectedReading?.content}</Text>
+            </View>
           </ScrollView>
         </SafeAreaView>
       </Modal>
@@ -419,8 +710,17 @@ const styles = StyleSheet.create({
   hero: { marginBottom: 30 },
   heroTitle: { fontSize: 32, fontWeight: '800', color: '#111827', marginBottom: 4 },
   heroSubtitle: { fontSize: 16, color: '#6b7280', fontWeight: '500' },
-  section: { marginBottom: 25 },
-  sectionTitle: { fontSize: 12, fontWeight: '700', color: '#9ca3af', marginBottom: 12, letterSpacing: 1.5 },
+  rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  editBtn: { padding: 10, backgroundColor: '#f5f3ff', borderRadius: 12 },
+  editBtnActive: { backgroundColor: '#6366f1' },
+  liturgicalPart: { marginBottom: 30, backgroundColor: '#f9fafb', padding: 15, borderRadius: 25 },
+  partTitle: { fontSize: 18, fontWeight: '800', color: '#4b5563', marginBottom: 15, marginLeft: 5 },
+  section: { marginBottom: 20 },
+  sectionTitle: { fontSize: 11, fontWeight: '700', color: '#9ca3af', marginBottom: 10, letterSpacing: 1.2, marginLeft: 5 },
+  cardContainer: { position: 'relative' },
+  removeBtn: { position: 'absolute', top: -5, right: -5, backgroundColor: '#fee2e2', padding: 5, borderRadius: 10, zIndex: 10, borderWidth: 1, borderColor: '#fecaca' },
+  emptyCard: { padding: 20, borderRadius: 20, borderStyle: 'dashed', borderWidth: 2, borderColor: '#e5e7eb', alignItems: 'center' },
+  emptyCardText: { color: '#9ca3af', fontWeight: '600' },
   card: { 
     backgroundColor: '#fff', padding: 16, borderRadius: 20, 
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
@@ -439,6 +739,12 @@ const styles = StyleSheet.create({
     marginHorizontal: 20, marginTop: 10, padding: 12, borderRadius: 15 
   },
   searchInput: { flex: 1, marginLeft: 10, color: '#1f2937', fontSize: 16, padding: 0 },
+  categoryScroll: { marginTop: 15 },
+  categoryContent: { paddingHorizontal: 20, gap: 10 },
+  categoryBtn: { paddingVertical: 8, paddingHorizontal: 16, borderRadius: 20, backgroundColor: '#f3f4f6', borderWidth: 1, borderColor: '#e5e7eb' },
+  categoryBtnActive: { backgroundColor: '#6366f1', borderColor: '#6366f1' },
+  categoryBtnText: { fontSize: 13, fontWeight: '600', color: '#6b7280' },
+  categoryBtnTextActive: { color: '#fff' },
   searchPlaceholder: { marginLeft: 10, color: '#9ca3af', fontSize: 16 },
   nav: { 
     flexDirection: 'row', backgroundColor: '#fff', paddingVertical: 12, 
@@ -465,6 +771,12 @@ const styles = StyleSheet.create({
   input: { backgroundColor: '#f9fafb', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 12, padding: 15, fontSize: 16, color: '#1f2937' },
   textArea: { height: 150, textAlignVertical: 'top' },
   row: { flexDirection: 'row', alignItems: 'center' },
+  chipContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  chip: { paddingVertical: 8, paddingHorizontal: 15, borderRadius: 20, backgroundColor: '#f3f4f6', borderWidth: 1, borderColor: '#e5e7eb' },
+  chipActive: { backgroundColor: '#6366f1', borderColor: '#6366f1' },
+  chipText: { fontSize: 13, fontWeight: '600', color: '#4b5563' },
+  chipTextActive: { color: '#fff' },
+  addChipBtn: { backgroundColor: '#6366f1', width: 50, height: 50, borderRadius: 12, marginLeft: 10, alignItems: 'center', justifyContent: 'center' },
   songMeta: { marginBottom: 30 },
   songRef: { fontSize: 14, fontWeight: '700', color: '#6366f1', textTransform: 'uppercase', marginBottom: 4 },
   songAuthor: { fontSize: 16, color: '#6b7280' },

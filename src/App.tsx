@@ -240,10 +240,10 @@ export default function App() {
                                       : "Texte"}
                                 </h4>
                                 <p className="text-xs text-gray-500">
-                                  {"reference" in data
-                                    ? data.reference
-                                    : "book" in data
-                                      ? data.book
+                                  {"reference" in (data as any)
+                                    ? (data as any).reference
+                                    : "book" in (data as any)
+                                      ? (data as any).book
                                       : ""}
                                 </p>
                               </div>
@@ -745,7 +745,7 @@ function AdminPanel({
                 Synchronisation CouchDB
               </h4>
               <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">
-                {import.meta.env.VITE_COUCHDB_URL
+                {(import.meta as any).env.VITE_COUCHDB_URL
                   ? "Connecté au serveur distant"
                   : "Mode local uniquement"}
               </p>
@@ -754,7 +754,7 @@ function AdminPanel({
           <div
             className={cn(
               "w-3 h-3 rounded-full",
-              import.meta.env.VITE_COUCHDB_URL ? "bg-emerald-500" : "bg-gray-300",
+              (import.meta as any).env.VITE_COUCHDB_URL ? "bg-emerald-500" : "bg-gray-300",
             )}
           />
         </div>
